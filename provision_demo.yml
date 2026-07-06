@@ -1,0 +1,97 @@
+---
+- name: Provision AWS EC2 Operational Tasks demo on AAP
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - setup.yml
+  vars:
+    _aap_host: "{{ lookup('env', 'AAP_SERVER') | default(lookup('env', 'CONTROLLER_HOST'), true) }}"
+    _aap_token: "{{ lookup('env', 'CONTROLLER_OAUTH_TOKEN') | default(lookup('env', 'MY_SERVICE_TOKEN'), true) }}"
+    aap_hostname: "{{ _aap_host if '://' in _aap_host else 'https://' ~ _aap_host }}"
+    aap_validate_certs: false
+    controller_dependency_check: false
+
+  tasks:
+    - name: Require AAP service token
+      ansible.builtin.assert:
+        that:
+          - _aap_token | length > 0
+          - aap_hostname | length > 0
+        fail_msg: >-
+          Set MY_SERVICE_TOKEN and AAP_SERVER (or CONTROLLER_OAUTH_TOKEN and
+          CONTROLLER_HOST) before running this playbook.
+
+    - name: Create or update project
+      ansible.controller.project:
+        name: "{{ aap_project_name }}"
+        organization: "{{ aap_organization }}"
+        scm_type: git
+        scm_url: "{{ aap_git_repo }}"
+        scm_branch: "{{ aap_git_branch }}"
+        scm_update_on_launch: true
+        controller_host: "{{ aap_hostname }}"
+        controller_oauthtoken: "{{ _aap_token }}"
+        validate_certs: "{{ aap_validate_certs }}"
+
+    - name: Create or update inventory
+      ansible.controller.inventory:
+        name: "{{ aap_inventory_name }}"
+        organization: "{{ aap_organization }}"
+        description: Localhost inventory for AWS API playbooks
+        controller_host: "{{ aap_hostname }}"
+        controller_oauthtoken: "{{ _aap_token }}"
+        validate_certs: "{{ aap_validate_certs }}"
+
+    - name: Create or update localhost host
+      ansible.controller.host:
+        name: localhost
+        inventory: "{{ aap_inventory_name }}"
+        variables:
+          ansible_connection: local
+        controller_host: "{{ aap_hostname }}"
+        controller_oauthtoken: "{{ _aap_token }}"
+        validate_certs: "{{ aap_validate_certs }}"
+
+    - name: Create or update missing tag job template
+      ansible.controller.job_template:
+        name: "{{ missing_tag_job_template_name }}"
+        job_type: run
+        organization: "{{ aap_organization }}"
+        project: "{{ aap_project_name }}"
+        playbook: playbooks/missing_tag.yaml
+        inventory: "{{ aap_inventory_name }}"
+        credentials:
+          - "{{ aap_aws_credential_name }}"
+        allow_simultaneous: true
+        ask_variables_on_launch: true
+        controller_host: "{{ aap_hostname }}"
+        controller_oauthtoken: "{{ _aap_token }}"
+        validate_certs: "{{ aap_validate_certs }}"
+
+    - name: Build parallel workflow nodes for each AWS region
+      ansible.builtin.set_fact:
+        _workflow_nodes: >-
+          {{
+            _workflow_nodes | default([]) + [{
+              'identifier': item,
+              'unified_job_template': missing_tag_job_template_name,
+              'extra_data': {'your_region': item}
+            }]
+          }}
+      loop: "{{ aws_regions }}"
+
+    - name: Apply workflow node definitions
+      ansible.builtin.set_fact:
+        controller_workflows:
+          - "{{ controller_workflows[0] | combine({'simplified_workflow_nodes': _workflow_nodes}) }}"
+
+    - name: Create or update multi-region workflow
+      ansible.builtin.include_role:
+        name: infra.aap_configuration.controller_workflow_job_templates
+      vars:
+        aap_token: "{{ _aap_token }}"
+
+    - name: Print message
+      ansible.builtin.debug:
+        msg: "{{ user_message }}"
+      when: user_message is defined

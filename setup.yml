@@ -1,0 +1,77 @@
+---
+# Override these with extra vars when provisioning on a specific AAP instance.
+aap_organization: Default
+aap_project_name: AWS EC2 Operational Tasks
+aap_git_repo: https://github.com/ansible-tmm/aws_ec2_operational_tasks
+aap_git_branch: main
+aap_inventory_name: AWS EC2 Operational Tasks Inventory
+aap_aws_credential_name: AWS -sean
+missing_tag_job_template_name: AWS | EC2 | Missing Owner Tag
+missing_tag_workflow_name: AWS | EC2 | Enforce Owner Tag | All Regions
+
+aws_regions:
+  # Americas
+  - us-east-1
+  - us-east-2
+  - us-west-1
+  - us-west-2
+  - ca-central-1
+  - sa-east-1
+  # Europe
+  - eu-west-1
+  - eu-west-2
+  - eu-west-3
+  - eu-central-1
+  - eu-north-1
+  # Asia Pacific
+  - ap-northeast-1
+  - ap-northeast-2
+  - ap-northeast-3
+  - ap-south-1
+  - ap-southeast-1
+  - ap-southeast-2
+
+user_message: >-
+  AWS EC2 Operational Tasks demo provisioned. Launch the
+  "{{ missing_tag_workflow_name }}" workflow job template to stop instances
+  missing the owner tag across all configured AWS regions in parallel.
+  Ensure an AWS credential named "{{ aap_aws_credential_name }}" exists in the
+  "{{ aap_organization }}" organization before running jobs.
+
+controller_inventories:
+  - name: "{{ aap_inventory_name }}"
+    organization: "{{ aap_organization }}"
+    description: Localhost inventory for AWS API playbooks
+
+controller_hosts:
+  - name: localhost
+    inventory: "{{ aap_inventory_name }}"
+    variables:
+      ansible_connection: local
+
+controller_projects:
+  - name: "{{ aap_project_name }}"
+    organization: "{{ aap_organization }}"
+    scm_type: git
+    scm_url: "{{ aap_git_repo }}"
+    scm_branch: "{{ aap_git_branch }}"
+    scm_update_on_launch: true
+
+controller_templates:
+  - name: "{{ missing_tag_job_template_name }}"
+    job_type: run
+    organization: "{{ aap_organization }}"
+    credentials:
+      - "{{ aap_aws_credential_name }}"
+    project: "{{ aap_project_name }}"
+    playbook: playbooks/missing_tag.yaml
+    inventory: "{{ aap_inventory_name }}"
+    allow_simultaneous: true
+    ask_variables_on_launch: true
+
+controller_workflows:
+  - name: "{{ missing_tag_workflow_name }}"
+    description: >-
+      Stop running EC2 instances missing the owner tag across AWS regions in
+      parallel.
+    organization: "{{ aap_organization }}"
