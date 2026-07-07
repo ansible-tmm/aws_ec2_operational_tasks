@@ -6,8 +6,22 @@ aap_git_repo: https://github.com/ansible-tmm/aws_ec2_operational_tasks
 aap_git_branch: main
 aap_inventory_name: AWS EC2 Operational Tasks Inventory
 aap_aws_credential_name: AWS -sean
+
 missing_tag_job_template_name: AWS | EC2 | Missing Owner Tag
 missing_tag_workflow_name: AWS | EC2 | Enforce Owner Tag | All Regions
+
+sleep_schedule_on_job_template_name: AWS | EC2 | Sleep Schedule On
+sleep_schedule_off_job_template_name: AWS | EC2 | Sleep Schedule Off
+sleep_schedule_on_workflow_name: AWS | EC2 | Sleep Schedule On | All Regions
+sleep_schedule_off_workflow_name: AWS | EC2 | Sleep Schedule Off | All Regions
+
+# Weekday schedules (Monday-Friday). Override times or timezone with extra vars.
+sleep_schedule_timezone: America/New_York
+sleep_schedule_dtstart_anchor: "2025-07-07"
+sleep_schedule_on_time: "06:00:00"
+sleep_schedule_off_time: "18:00:00"
+sleep_schedule_weekdays: monday,tuesday,wednesday,thursday,friday
+sleep_schedule_weekday_byday: MO,TU,WE,TH,FR
 
 aws_regions:
   # Americas
@@ -31,12 +45,63 @@ aws_regions:
   - ap-southeast-1
   - ap-southeast-2
 
+aap_job_templates:
+  - name: "{{ missing_tag_job_template_name }}"
+    playbook: playbooks/missing_tag.yaml
+  - name: "{{ sleep_schedule_on_job_template_name }}"
+    playbook: playbooks/sleep_schedule_on.yaml
+  - name: "{{ sleep_schedule_off_job_template_name }}"
+    playbook: playbooks/sleep_schedule_off.yaml
+
+aap_workflows:
+  - name: "{{ missing_tag_workflow_name }}"
+    description: >-
+      Stop running EC2 instances missing the owner tag across AWS regions in
+      parallel.
+    job_template: "{{ missing_tag_job_template_name }}"
+  - name: "{{ sleep_schedule_on_workflow_name }}"
+    description: >-
+      Start stopped EC2 instances tagged sleep_schedule across AWS regions in
+      parallel.
+    job_template: "{{ sleep_schedule_on_job_template_name }}"
+  - name: "{{ sleep_schedule_off_workflow_name }}"
+    description: >-
+      Stop running EC2 instances tagged sleep_schedule across AWS regions in
+      parallel.
+    job_template: "{{ sleep_schedule_off_job_template_name }}"
+
+aap_schedules:
+  - name: "{{ sleep_schedule_on_workflow_name }} | Weekdays"
+    description: >-
+      Start sleep_schedule tagged instances at {{ sleep_schedule_on_time }}
+      Monday-Friday ({{ sleep_schedule_timezone }}).
+    unified_job_template: "{{ sleep_schedule_on_workflow_name }}"
+    organization: "{{ aap_organization }}"
+    enabled: true
+    rrule: >-
+      DTSTART;TZID={{ sleep_schedule_timezone }}:{{ sleep_schedule_dtstart_anchor | replace('-', '') }}T{{ sleep_schedule_on_time | replace(':', '') }}
+      RRULE:FREQ=WEEKLY;INTERVAL=1;BYDAY={{ sleep_schedule_weekday_byday }}
+  - name: "{{ sleep_schedule_off_workflow_name }} | Weekdays"
+    description: >-
+      Stop sleep_schedule tagged instances at {{ sleep_schedule_off_time }}
+      Monday-Friday ({{ sleep_schedule_timezone }}).
+    unified_job_template: "{{ sleep_schedule_off_workflow_name }}"
+    organization: "{{ aap_organization }}"
+    enabled: true
+    rrule: >-
+      DTSTART;TZID={{ sleep_schedule_timezone }}:{{ sleep_schedule_dtstart_anchor | replace('-', '') }}T{{ sleep_schedule_off_time | replace(':', '') }}
+      RRULE:FREQ=WEEKLY;INTERVAL=1;BYDAY={{ sleep_schedule_weekday_byday }}
+
 user_message: >-
   AWS EC2 Operational Tasks demo provisioned. Launch the
-  "{{ missing_tag_workflow_name }}" workflow job template to stop instances
-  missing the owner tag across all configured AWS regions in parallel.
-  Ensure an AWS credential named "{{ aap_aws_credential_name }}" exists in the
-  "{{ aap_organization }}" organization before running jobs.
+  "{{ missing_tag_workflow_name }}" workflow to stop instances missing the owner
+  tag across all configured AWS regions in parallel. Sleep schedule workflows
+  "{{ sleep_schedule_on_workflow_name }}" and
+  "{{ sleep_schedule_off_workflow_name }}" run automatically Monday-Friday at
+  {{ sleep_schedule_on_time }} and {{ sleep_schedule_off_time }}
+  ({{ sleep_schedule_timezone }}). Ensure an AWS credential named
+  "{{ aap_aws_credential_name }}" exists in the "{{ aap_organization }}"
+  organization before running jobs.
 
 controller_inventories:
   - name: "{{ aap_inventory_name }}"

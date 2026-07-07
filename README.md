@@ -97,9 +97,15 @@ This Ansible Playbook will retrieve all instances from the specified region `us-
 
 # Provision on Ansible Automation Platform
 
-Use `provision_demo.yml` to create the project, job template, and workflow on Ansible Automation Platform (AAP). This follows the same configuration-as-code pattern used in [ansible/product-demos](https://github.com/ansible/product-demos), with resource definitions in `setup.yml` and provisioning handled by `provision_demo.yml`.
+Use `provision_demo.yml` to create the project, job templates, workflows, and schedules on Ansible Automation Platform (AAP). This follows the same configuration-as-code pattern used in [ansible/product-demos](https://github.com/ansible/product-demos), with resource definitions in `setup.yml` and provisioning handled by `provision_demo.yml`.
 
-The workflow runs `playbooks/missing_tag.yaml` in parallel across every AWS region listed in `setup.yml` (17 regions enabled on the default commercial partition). Each workflow node passes `your_region` as an extra variable and uses the region code as the node alias.
+Three parallel workflows run across every AWS region listed in `setup.yml` (17 regions enabled on the default commercial partition). Each workflow node passes `your_region` as an extra variable and uses the region code as the node alias.
+
+| Workflow | Playbook | Schedule |
+| --- | --- | --- |
+| Enforce Owner Tag | `playbooks/missing_tag.yaml` | Manual (not scheduled) |
+| Sleep Schedule On | `playbooks/sleep_schedule_on.yaml` | Weekdays at 6:00 AM |
+| Sleep Schedule Off | `playbooks/sleep_schedule_off.yaml` | Weekdays at 6:00 PM |
 
 ```
 START ─┬─ us-east-1
@@ -111,15 +117,13 @@ START ─┬─ us-east-1
 
 ## Prerequisites
 
-1. Install required collections:
+1. Job playbooks run from an Execution Environment that already includes `amazon.aws`, `community.aws`, and related collections. This repo does not ship a `collections/requirements.yml`, so AAP project sync will not attempt a Galaxy install.
 
-```bash
-ansible-galaxy collection install -r collections/requirements.yml
-```
+2. To run `provision_demo.yml` locally (outside AAP), install `ansible.controller` and `infra.aap_configuration` into your local environment or EE.
 
-2. An AWS credential must already exist in AAP for the target organization. Update `aap_aws_credential_name` in `setup.yml` or override it at runtime.
+3. An AWS credential must already exist in AAP for the target organization. Update `aap_aws_credential_name` in `setup.yml` or override it at runtime.
 
-3. A service account token (or OAuth token) with permission to create projects, job templates, and workflows in the target organization.
+4. A service account token (or OAuth token) with permission to create projects, job templates, and workflows in the target organization.
 
 ## Authentication
 
@@ -165,15 +169,29 @@ ansible-playbook provision_demo.yml \
 | --- | --- |
 | Project | AWS EC2 Operational Tasks |
 | Inventory | AWS EC2 Operational Tasks Inventory |
-| Job template | AWS | EC2 | Missing Owner Tag |
-| Workflow job template | AWS | EC2 | Enforce Owner Tag \| All Regions |
+| Job template | AWS \| EC2 \| Missing Owner Tag |
+| Job template | AWS \| EC2 \| Sleep Schedule On |
+| Job template | AWS \| EC2 \| Sleep Schedule Off |
+| Workflow job template | AWS \| EC2 \| Enforce Owner Tag \| All Regions |
+| Workflow job template | AWS \| EC2 \| Sleep Schedule On \| All Regions |
+| Workflow job template | AWS \| EC2 \| Sleep Schedule Off \| All Regions |
+| Schedule | AWS \| EC2 \| Sleep Schedule On \| All Regions \| Weekdays |
+| Schedule | AWS \| EC2 \| Sleep Schedule Off \| All Regions \| Weekdays |
 
-After provisioning, launch **AWS \| EC2 \| Enforce Owner Tag \| All Regions** from the AAP UI. You can also schedule that workflow to run periodically so untagged instances are stopped automatically in every configured region.
+After provisioning, launch **AWS \| EC2 \| Enforce Owner Tag \| All Regions** from the AAP UI to stop untagged instances on demand. The sleep schedule workflows run automatically Monday through Friday (no Saturday or Sunday runs). Default times are 6:00 AM for turn-on and 6:00 PM for turn-off in `America/New_York`; override with extra vars:
+
+```bash
+ansible-playbook provision_demo.yml \
+  -e sleep_schedule_on_time='06:00:00' \
+  -e sleep_schedule_off_time='20:00:00' \
+  -e sleep_schedule_timezone='America/Los_Angeles'
+```
 
 ## Configuration files
 
-- `setup.yml` — AAP resource definitions, including AWS regions and workflow nodes
+- `setup.yml` — AAP resource definitions, including AWS regions, job templates, workflows, and schedules
 - `provision_demo.yml` — playbook that creates or updates those resources via the AAP API
+- `tasks/build_regional_workflow.yml` — builds parallel per-region workflow nodes from `aws_regions`
 
 To add or remove regions, edit the `aws_regions` list in `setup.yml`, then re-run `provision_demo.yml`. Workflow nodes are generated automatically from that list.
 

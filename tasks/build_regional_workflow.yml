@@ -1,0 +1,30 @@
+---
+- name: Reset regional nodes for workflow
+  ansible.builtin.set_fact:
+    _workflow_nodes: []
+
+- name: Add regional node to workflow
+  ansible.builtin.set_fact:
+    _workflow_nodes: >-
+      {{
+        _workflow_nodes + [{
+          'identifier': region_item,
+          'unified_job_template': workflow_def.job_template,
+          'extra_data': {'your_region': region_item}
+        }]
+      }}
+  loop: "{{ aws_regions }}"
+  loop_control:
+    loop_var: region_item
+
+- name: Append workflow definition
+  ansible.builtin.set_fact:
+    controller_workflows: >-
+      {{
+        controller_workflows + [{
+          'name': workflow_def.name,
+          'description': workflow_def.description,
+          'organization': aap_organization,
+          'simplified_workflow_nodes': _workflow_nodes
+        }]
+      }}
